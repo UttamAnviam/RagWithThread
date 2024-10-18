@@ -1,0 +1,25 @@
+Upload PDF Files and Query Content
+
+curl -X POST "http://127.0.0.1:8000/upload_and_query/" \
+     -F "files=@path/to/your/file1.pdf" \
+     -F "files=@path/to/your/file2.pdf" \
+     -F "query=What is the main conclusion of this document?" \
+     -F "user_id=user123"
+
+
+Create a Thread
+curl -X POST "http://127.0.0.1:8000/create_thread/" \
+     -F "user_id=user123" \
+     -F "name=John Doe"
+
+
+Get a User's Name from the Latest Thread
+curl -X POST "http://127.0.0.1:8000/get_name/" \
+     -F "user_id=user123"
+
+
+Delete a Thread
+curl -X DELETE "http://127.0.0.1:8000/delete_thread/" \
+     -F "user_id=user123" \
+     -F "thread_id=1"  # Replace 1 with the actual thread ID you want to delete
+
