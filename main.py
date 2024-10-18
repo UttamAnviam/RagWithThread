@@ -3,9 +3,11 @@ import openai
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from typing import Dict, List
 import pandas as pd
 import csv
+from uuid import UUID, uuid4
 
 app = FastAPI()
 
@@ -19,10 +21,10 @@ app.add_middleware(
 )
 
 # Set your OpenAI API key
-openai.api_key = "Enter API Key Here"  # Replace with your actual OpenAI API key
+openai.api_key = "YOUR_OPENAI_API_KEY"  # Replace with your actual OpenAI API key
 
-# Data structure to hold user threads
-user_threads: Dict[str, List[Dict[str, str]]] = {}
+# Data structure to hold threads
+threads: List["Thread"] = []
 
 # Function to extract text from a PDF file
 def extract_text_from_pdf(file):
@@ -73,7 +75,7 @@ def split_text_into_chunks(text, chunk_size=1500):
 def query_pdf_content(chunk_text, query):
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
+            model="gpt-3.5-turbo",  # Ensure the correct model is used
             messages=[
                 {
                     "role": "user",
@@ -99,7 +101,7 @@ def query_pdf_content_in_chunks(combined_text, query):
     combined_response = "\n".join(responses)
 
     # Final query to OpenAI API to summarize combined responses
-    final_response =query_pdf_content(combined_response, """generate a final report.if asked to generate a coronere report , generate it in a detailed coronere  format with proper explanation 
+    final_response = query_pdf_content(combined_response, """generate a final report.if asked to generate a coronere report , generate it in a detailed coronere  format with proper explanation 
                                        General principles
 The report should be a detailed factual account, based on the
 medical records and your knowledge of the deceased.
@@ -190,12 +192,79 @@ understanding of what they did and the conclusions they reached
 based on your own knowledge or the clinical notes. You should not,
 however, comment on the adequacy or otherwise of their
 performance.""")
+    
     return final_response
+
+
+user_threads: Dict[str, List[Dict]] = {}
+
+class Thread(BaseModel):
+    id: UUID  # UUID will be provided in the request
+    doctor_name: str
+    user_id: str
+    content: str
+
+@app.post("/threads/", response_model=Thread)
+async def create_thread(thread: Thread):
+    # Ensure the user has a list for their threads
+    if thread.user_id not in user_threads:
+        user_threads[thread.user_id] = []
+
+    # Check for duplicate thread IDs for the same user
+    if any(existing_thread['id'] == thread.id for existing_thread in user_threads[thread.user_id]):
+        raise HTTPException(status_code=400, detail="Thread with this ID already exists for this user.")
+
+    # Append the new thread to the user's thread list
+    user_threads[thread.user_id].append(thread.dict())
+    return thread
+
+@app.get("/threads/", response_model=Dict[str, List[Thread]])
+def read_threads():
+    # Convert the stored threads to the response model
+    return {user_id: [Thread(**thread) for thread in threads] for user_id, threads in user_threads.items()}
+
+@app.get("/threads/{user_id}", response_model=List[Thread])
+def read_user_threads(user_id: str):
+    if user_id in user_threads:
+        return [Thread(**thread) for thread in user_threads[user_id]]
+    raise HTTPException(status_code=404, detail="User threads not found")
+
+@app.get("/threads/{user_id}/{thread_id}", response_model=Thread)
+def read_thread(user_id: str, thread_id: UUID):
+    if user_id not in user_threads:
+        raise HTTPException(status_code=404, detail="User threads not found")
+        
+    for thread in user_threads[user_id]:
+        if thread['id'] == thread_id:
+            return Thread(**thread)
+    raise HTTPException(status_code=404, detail="Thread not found")
+
+@app.put("/threads/{user_id}/{thread_id}", response_model=Thread)
+def update_thread(user_id: str, thread_id: UUID, updated_thread: Thread):
+    if user_id not in user_threads:
+        raise HTTPException(status_code=404, detail="User threads not found")
+
+    for index, thread in enumerate(user_threads[user_id]):
+        if thread['id'] == thread_id:
+            user_threads[user_id][index] = updated_thread.dict()
+            user_threads[user_id][index]['id'] = thread_id  # Ensure ID remains the same
+            return updated_thread
+    raise HTTPException(status_code=404, detail="Thread not found")
+
+@app.delete("/threads/{user_id}/{thread_id}", response_model=Thread)
+def delete_thread(user_id: str, thread_id: UUID):
+    if user_id not in user_threads:
+        raise HTTPException(status_code=404, detail="User threads not found")
+
+    for index, thread in enumerate(user_threads[user_id]):
+        if thread['id'] == thread_id:
+            return Thread(**user_threads[user_id].pop(index))
+    raise HTTPException(status_code=404, detail="Thread not found")
 
 # Endpoint to upload files and ask a question
 @app.post("/upload_and_query/")
 async def upload_and_query(
-    files: list[UploadFile] = File(...), 
+    files: List[UploadFile] = File(...), 
     query: str = Form(...),
     user_id: str = Form(...)
 ):
@@ -207,10 +276,7 @@ async def upload_and_query(
         # Handle PDF files
         if filename.endswith(".pdf"):
             pdf_text = extract_text_from_pdf(file.file)
-            if not pdf_text:
-                print(f"No extractable text in PDF file: {file.filename}")
-            else:
-                combined_text += pdf_text + "\n"
+            combined_text += pdf_text + "\n"
 
         # Handle TXT files
         elif filename.endswith(".txt"):
@@ -228,18 +294,12 @@ async def upload_and_query(
             combined_text += excel_text + "\n"
 
         else:
-            print(f"Unsupported file type: {file.filename}")
             return JSONResponse(content={"error": f"Unsupported file type: {file.filename}"}, status_code=400)
 
     if not combined_text:
-        print("No extractable text found in any file.")
         return JSONResponse(content={"error": "None of the provided files contain extractable text."}, status_code=400)
 
-    print(f"Combined text extracted: {combined_text[:500]}")  # Log first 500 characters for debugging
-
     answer = query_pdf_content_in_chunks(combined_text, query)
-    
-    print(f"OpenAI API response: {answer[:500]}")  # Log first 500 characters of the response for debugging
     
     return {"query": query, "answer": answer}
 
