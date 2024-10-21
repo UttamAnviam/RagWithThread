@@ -20,6 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Set your OpenAI API key
 openai.api_key = "APi Key"  # Replace with your actual OpenAI API key
 
