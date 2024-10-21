@@ -1,3 +1,4 @@
+import os
 import PyPDF2
 import openai
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -20,12 +21,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # Set your OpenAI API key
-openai.api_key = "your-openai-api-key"  # Replace with your actual OpenAI API key
+openai.api_key = "sk-Ep2P720bD2GzRkah7NAiVFOU_aHoUcQxTCwS9yPuMcT3BlbkFJN0Kgi1CGy-dW6Ndf_sb6wy4eO7dn6mEcHhEgSgjL4A"  # Replace with your actual OpenAI API key
 
 # Data structure to hold user threads
 user_threads: Dict[str, List[Dict]] = {}
+
+# Define a directory to save uploaded files
+UPLOAD_DIR = "uploaded_files"
+os.makedirs(UPLOAD_DIR, exist_ok=True)  # Create the directory if it doesn't exist
 
 class Message(BaseModel):
     user_id: str
@@ -37,6 +41,7 @@ class Thread(BaseModel):
     user_id: str
     content: str
     messages: List[Message] = []  # Add messages to the thread
+    uploaded_files: List[str] = []  # Track uploaded file paths
 
 # Utility function to extract text from PDF, TXT, CSV, and Excel
 def extract_text(file: UploadFile):
@@ -100,7 +105,7 @@ def split_text_into_chunks(text, chunk_size=1500):
 def query_pdf_content(chunk_text, query):
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
@@ -190,17 +195,25 @@ async def upload_and_query(
     user_id: str = Form(...)
 ):
     combined_text = ""
+    uploaded_file_names = [] 
 
-    # Extract text from each file
     for file in files:
-        combined_text += extract_text(file) + "\n"
+        # Save the file to the specified directory
+        file_location = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_location, "wb") as f:
+            f.write(await file.read())  # Save the file content
 
-    if not combined_text:
-        return JSONResponse(content={"error": "None of the provided files contain extractable text."}, status_code=400)
+        uploaded_file_names.append(file_location)  # Store the saved file path
 
-    # Create a new thread for the user
-    thread_id = uuid4()
-    new_thread = Thread(id=thread_id, doctor_name="DocName", user_id=user_id, content=combined_text)
+        # Extract text from the uploaded file
+        extracted_text = extract_text(file)
+        combined_text += extracted_text + "\n"
+
+    # Create a new thread with uploaded files
+    thread_id = uuid4()  # Generate a new UUID for the thread
+    new_thread = Thread(id=thread_id, doctor_name="DocName", user_id=user_id, content=combined_text, uploaded_files=uploaded_file_names)
+    
+    # Create the thread
     await create_thread(new_thread)
 
     # Query the content
