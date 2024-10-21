@@ -239,7 +239,6 @@ async def upload_and_query(
     answer = query_pdf_content_in_chunks(combined_text, query)
     
     return {"query": query, "answer": answer}
-
 # API to upload files and continue chat on an existing thread
 @app.post("/upload_and_continue_chat/")
 async def upload_and_continue_chat(
@@ -249,10 +248,20 @@ async def upload_and_continue_chat(
     user_id: str = Form(...)
 ):
     combined_text = ""
+    uploaded_file_paths = []  # To store file paths
 
-    # Extract text from the uploaded files
+    # Extract text from the uploaded files and save them to a directory
     for file in files:
-        combined_text += extract_text(file) + "\n"
+        # Save the file to the specified directory
+        file_location = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_location, "wb") as f:
+            f.write(await file.read())  # Save the file content
+
+        uploaded_file_paths.append(file_location)  # Store the saved file path
+
+        # Extract text from the uploaded file
+        extracted_text = extract_text(file)
+        combined_text += extracted_text + "\n"
 
     if not combined_text:
         return JSONResponse(content={"error": "None of the provided files contain extractable text."}, status_code=400)
@@ -261,7 +270,11 @@ async def upload_and_continue_chat(
     if user_id in user_threads:
         for thread in user_threads[user_id]:
             if thread['id'] == thread_id:
-                thread['messages'].append({"user_id": user_id, "content": query})
+                # Append the query and file paths as a message from the user
+                thread['messages'].append({
+                    "user_id": user_id,
+                    "content": f"Query: {query}\nFiles: {uploaded_file_paths}"
+                })
                 break
         else:
             raise HTTPException(status_code=404, detail="Thread not found.")
@@ -272,6 +285,17 @@ async def upload_and_continue_chat(
     answer = query_pdf_content_in_chunks(combined_text, query)
 
     # Append assistant's response
-    thread['messages'].append({"user_id": "assistant", "content": answer})
+    thread['messages'].append({
+        "user_id": "assistant", 
+        "content": answer
+    })
     
-    return {"query": query, "answer": answer}
+    # Return query, answer, uploaded files, thread_id, and user_id
+    return {
+        "query": query,
+        "answer": answer,
+        "uploaded_files": uploaded_file_paths,
+        "thread_id": str(thread_id),  # Add thread_id to the response
+        "user_id": user_id  # Add user_id to the response
+    }
+
