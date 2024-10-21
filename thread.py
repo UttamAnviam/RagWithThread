@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 # Set your OpenAI API key
-openai.api_key = "API Key"  # Replace with your actual OpenAI API key
+openai.api_key = "your-openai-api-key"  # Replace with your actual OpenAI API key
 
 # Data structure to hold user threads
 user_threads: Dict[str, List[Dict]] = {}
