@@ -1,0 +1,55 @@
+Create a Thread
+curl -X POST "http://localhost:8000/threads/" \
+-H "Content-Type: application/json" \
+-d '{
+    "id": "bdfc8d25-4cc1-4421-8d7e-bd1598a573ec",
+    "doctor_name": "Dr. Smith",
+    "user_id": "user123",
+    "content": "Initial content of the thread.",
+    "messages": []
+}'
+
+
+
+Get All Threads
+curl -X GET "http://localhost:8000/threads/"
+
+
+Get Threads by User ID
+curl -X GET "http://localhost:8000/threads/user123"
+
+
+Get a Specific Thread by Thread ID
+curl -X GET "http://localhost:8000/threads/user123/bdfc8d25-4cc1-4421-8d7e-bd1598a573ec"
+
+
+Update a Thread
+curl -X PUT "http://localhost:8000/threads/user123/bdfc8d25-4cc1-4421-8d7e-bd1598a573ec" \
+-H "Content-Type: application/json" \
+-d '{
+    "id": "bdfc8d25-4cc1-4421-8d7e-bd1598a573ec",
+    "doctor_name": "Dr. Smith Updated",
+    "user_id": "user123",
+    "content": "Updated content of the thread.",
+    "messages": []
+}'
+
+
+Delete a Thread
+curl -X DELETE "http://localhost:8000/threads/user123/bdfc8d25-4cc1-4421-8d7e-bd1598a573ec"
+
+
+Upload Files and Query the Document
+curl -X POST "http://localhost:8000/upload_and_query/" \
+-F "files=@/path/to/file1.pdf" \
+-F "files=@/path/to/file2.txt" \
+-F "query=What are the key points?" \
+-F "user_id=user123"
+
+
+Upload Files and Continue a Chat in an Existing Thread
+curl -X POST "http://localhost:8000/upload_and_continue_chat/" \
+-F "files=@/path/to/file1.pdf" \
+-F "query=What does this document add to the existing discussion?" \
+-F "thread_id=bdfc8d25-4cc1-4421-8d7e-bd1598a573ec" \
+-F "user_id=user123"

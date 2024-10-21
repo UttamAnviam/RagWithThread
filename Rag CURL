@@ -2,7 +2,6 @@ Upload PDF Files and Query Content
 
 curl -X POST "http://127.0.0.1:8000/upload_and_query/" \
      -F "files=@path/to/your/file1.pdf" \
-     -F "files=@path/to/your/file2.pdf" \
      -F "query=What is the main conclusion of this document?" \
      -F "user_id=user123"
 
