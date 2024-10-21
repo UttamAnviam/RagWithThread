@@ -10,11 +10,24 @@ import pandas as pd
 import csv
 from uuid import UUID, uuid4
 import requests
-import os
 from dotenv import load_dotenv
-# Function to query OpenAI API with a single chunk
-load_dotenv()
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from database import SessionLocal, ThreadDB
 
+
+# Dependency to get the database session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI()
 
@@ -26,8 +39,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Set your OpenAI API key
 
 # Data structure to hold user threads
 user_threads: Dict[str, List[Dict]] = {}
@@ -106,11 +117,9 @@ def extract_text_from_excel(file):
 def split_text_into_chunks(text, chunk_size=1500):
     return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
 
-
 # Get the endpoint and API key from environment variables
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-
 
 # Function to query Azure OpenAI API with a single chunk
 def query_pdf_content(chunk_text, query):
@@ -136,7 +145,6 @@ def query_pdf_content(chunk_text, query):
         print(f"Error querying Azure OpenAI API: {e}")
         return f"Error querying Azure OpenAI API: {e}"
     
-
 # Function to query OpenAI API with multiple chunks and get a combined response
 def query_pdf_content_in_chunks(combined_text, query):
     chunks = split_text_into_chunks(combined_text)
@@ -148,47 +156,55 @@ def query_pdf_content_in_chunks(combined_text, query):
 
     return "\n".join(responses)
 
-# API to create a new thread
+
+
 @app.post("/threads/", response_model=Thread)
-async def create_thread(thread: Thread):
-    if thread.user_id not in user_threads:
-        user_threads[thread.user_id] = []
+async def create_thread(thread: Thread, db: Session = Depends(get_db)):
+    db_thread = ThreadDB(
+        id=thread.id,
+        doctor_name=thread.doctor_name,
+        user_id=thread.user_id,
+        content=thread.content,
+        messages=[message.dict() for message in thread.messages],  # Convert Message objects to dicts
+        uploaded_files=thread.uploaded_files  # Save uploaded files
+    )
+    db.add(db_thread)
+    db.commit()
+    db.refresh(db_thread)
+    return db_thread
 
-    if any(existing_thread['id'] == thread.id for existing_thread in user_threads[thread.user_id]):
-        raise HTTPException(status_code=400, detail="Thread with this ID already exists for this user.")
-    
-    user_threads[thread.user_id].append({
-        "id": str(thread.id),  # Convert UUID to string
-        "doctor_name": thread.doctor_name,
-        "user_id": thread.user_id,
-        "content": thread.content,
-        "messages": thread.messages,
-        "uploaded_files": thread.uploaded_files  # Ensure files are added
-    })
-    return thread
-
-# API to read all threads
-@app.get("/threads/", response_model=Dict[str, List[Thread]])
-def read_threads():
-    return {user_id: [Thread(**thread) for thread in threads] for user_id, threads in user_threads.items()}
-
-# API to read threads by user ID
+# API to read threads by user ID from the database
 @app.get("/threads/{user_id}", response_model=List[Thread])
-def read_user_threads(user_id: str):
-    if user_id in user_threads:
-        return [Thread(**thread) for thread in user_threads[user_id]]
-    raise HTTPException(status_code=404, detail="User threads not found")
+def read_user_threads(user_id: str, db: Session = Depends(get_db)):
+    threads = db.query(ThreadDB).filter(ThreadDB.user_id == user_id).all()
+    return [Thread(
+        id=thread.id,
+        doctor_name=thread.doctor_name,
+        user_id=thread.user_id,
+        content=thread.content,
+        messages=thread.messages,
+        uploaded_files=thread.uploaded_files
+    ) for thread in threads]
+    
+    
 
 # API to read a specific thread
 @app.get("/threads/{user_id}/{thread_id}", response_model=Thread)
-def read_thread(user_id: str, thread_id: UUID):
-    if user_id not in user_threads:
-        raise HTTPException(status_code=404, detail="User threads not found")
-
-    for thread in user_threads[user_id]:
-        if thread['id'] == thread_id:
-            return Thread(**thread)
+def read_thread(user_id: str, thread_id: UUID, db: Session = Depends(get_db)):
+    thread = db.query(ThreadDB).filter(ThreadDB.user_id == user_id, ThreadDB.id == thread_id).first()
+    if thread:
+        return Thread(
+            id=thread.id,
+            doctor_name=thread.doctor_name,
+            user_id=thread.user_id,
+            content=thread.content,
+            messages=thread.messages,
+            uploaded_files=thread.uploaded_files
+        )
     raise HTTPException(status_code=404, detail="Thread not found")
+
+
+
 
 # API to update a thread
 @app.put("/threads/{user_id}/{thread_id}", response_model=Thread)
@@ -213,6 +229,7 @@ def delete_thread(user_id: str, thread_id: UUID):
             return Thread(**user_threads[user_id].pop(index))
     raise HTTPException(status_code=404, detail="Thread not found")
 
+
 # API to upload files and ask a query
 @app.post("/upload_and_query/")
 async def upload_and_query(
@@ -221,7 +238,7 @@ async def upload_and_query(
     user_id: str = Form(...)
 ):
     combined_text = ""
-    uploaded_file_names = [] 
+    uploaded_file_names = []  # This should collect file paths
 
     for file in files:
         # Save the file to the specified directory
@@ -237,15 +254,28 @@ async def upload_and_query(
 
     # Create a new thread with uploaded files
     thread_id = uuid4()  # Generate a new UUID for the thread
-    new_thread = Thread(id=thread_id, doctor_name="DocName", user_id=user_id, content=combined_text, uploaded_files=uploaded_file_names)
-    
-    # Create the thread
-    await create_thread(new_thread)
+    new_thread = Thread(
+        id=thread_id,
+        doctor_name="DocName",  # Pass dynamically if needed
+        user_id=user_id,
+        content=combined_text,
+        uploaded_files=uploaded_file_names  # Make sure this line is correct
+    )
 
-    # Query the content
+    # Create the thread
+    await create_thread(new_thread)  # Ensure this method properly adds the thread
+
+    # Continue with querying and return response
     answer = query_pdf_content_in_chunks(combined_text, query)
     
-    return {"query": query, "answer": answer}
+    return {
+        "query": query,
+        "answer": answer,
+        "uploaded_files": uploaded_file_names,  # This should show uploaded files
+        "thread_id": str(thread_id),  # Include thread_id in the response
+        "user_id": user_id  # Include user_id in the response
+    }
+
 
 # API to upload files and continue chat on an existing thread
 @app.post("/upload_and_continue_chat/")
@@ -274,7 +304,7 @@ async def upload_and_continue_chat(
     if not combined_text:
         return JSONResponse(content={"error": "None of the provided files contain extractable text."}, status_code=400)
 
-    # Fetch the thread and append the new message and uploaded files
+    # Fetch the thread and append the new message
     if user_id in user_threads:
         for thread in user_threads[user_id]:
             if thread['id'] == thread_id:
@@ -283,7 +313,6 @@ async def upload_and_continue_chat(
                     "user_id": user_id,
                     "content": f"Query: {query}\nFiles: {uploaded_file_paths}"
                 })
-                thread['uploaded_files'].extend(uploaded_file_paths)  # Append the file paths
                 break
         else:
             raise HTTPException(status_code=404, detail="Thread not found.")
@@ -304,7 +333,6 @@ async def upload_and_continue_chat(
         "query": query,
         "answer": answer,
         "uploaded_files": uploaded_file_paths,
-        "thread_id": str(thread_id),  # Add thread_id to the response
-        "user_id": user_id  # Add user_id to the response
+        "thread_id": str(thread_id),  # Return thread_id
+        "user_id": user_id  # Return user_id
     }
-

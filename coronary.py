@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 # Set your OpenAI API key
-openai.api_key = "sk-Ep2P720bD2GzRkah7NAiVFOU_aHoUcQxTCwS9yPuMcT3BlbkFJN0Kgi1CGy-dW6Ndf_sb6wy4eO7dn6mEcHhEgSgjL4A"  # Replace with your actual OpenAI API key
+openai.api_key = ""  # Replace with your actual OpenAI API key
 
 # Data structure to hold threads
 threads: List["Thread"] = []
@@ -90,9 +90,7 @@ async def upload_and_query(
 ):
     # Check for specific queries that should not trigger PDF processing
     if "patient id" in query.lower() or "top" in query.lower():
-        # Handle database queries here
-        # Example response for patient ID query (this should connect to your actual database logic)
-        # This is a placeholder for your database logic
+     
         return JSONResponse(content={"query": query, "result": "Placeholder result based on database logic"}, status_code=200)
 
     combined_text = ""
