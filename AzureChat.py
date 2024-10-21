@@ -9,6 +9,12 @@ from typing import Dict, List
 import pandas as pd
 import csv
 from uuid import UUID, uuid4
+import requests
+import os
+from dotenv import load_dotenv
+# Function to query OpenAI API with a single chunk
+load_dotenv()
+
 
 app = FastAPI()
 
@@ -22,7 +28,6 @@ app.add_middleware(
 )
 
 # Set your OpenAI API key
-openai.api_key = ""  # Replace with your actual OpenAI API key
 
 # Data structure to hold user threads
 user_threads: Dict[str, List[Dict]] = {}
@@ -101,22 +106,36 @@ def extract_text_from_excel(file):
 def split_text_into_chunks(text, chunk_size=1500):
     return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
 
-# Function to query OpenAI API with a single chunk
+
+# Get the endpoint and API key from environment variables
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+
+
+# Function to query Azure OpenAI API with a single chunk
 def query_pdf_content(chunk_text, query):
+    headers = {
+        "Content-Type": "application/json",
+        "api-key": AZURE_OPENAI_API_KEY,
+    }
+    
+    data = {
+        "messages": [
+            {
+                "role": "user",
+                "content": f"Analyze the following document: {chunk_text}. Based on this text, answer the question: {query}."
+            }
+        ]
+    }
+    
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Analyze the following document: {chunk_text}. Based on this text, answer the question: {query}."
-                }
-            ]
-        )
-        return response['choices'][0]['message']['content']
+        response = requests.post(AZURE_OPENAI_ENDPOINT, json=data, headers=headers)
+        response.raise_for_status()  # Raise an error for bad responses
+        return response.json()['choices'][0]['message']['content']
     except Exception as e:
-        print(f"Error querying OpenAI API: {e}")
-        return f"Error querying OpenAI API: {e}"
+        print(f"Error querying Azure OpenAI API: {e}")
+        return f"Error querying Azure OpenAI API: {e}"
+    
 
 # Function to query OpenAI API with multiple chunks and get a combined response
 def query_pdf_content_in_chunks(combined_text, query):
