@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 # Set your OpenAI API key
-openai.api_key = "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"  # Replace with your actual OpenAI API key
+openai.api_key = "APi Key"  # Replace with your actual OpenAI API key
 
 # Data structure to hold threads
 threads: List["Thread"] = []
