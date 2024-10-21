@@ -156,8 +156,15 @@ async def create_thread(thread: Thread):
 
     if any(existing_thread['id'] == thread.id for existing_thread in user_threads[thread.user_id]):
         raise HTTPException(status_code=400, detail="Thread with this ID already exists for this user.")
-
-    user_threads[thread.user_id].append(thread.dict())
+    
+    user_threads[thread.user_id].append({
+        "id": str(thread.id),  # Convert UUID to string
+        "doctor_name": thread.doctor_name,
+        "user_id": thread.user_id,
+        "content": thread.content,
+        "messages": thread.messages,
+        "uploaded_files": thread.uploaded_files  # Ensure files are added
+    })
     return thread
 
 # API to read all threads
@@ -239,6 +246,7 @@ async def upload_and_query(
     answer = query_pdf_content_in_chunks(combined_text, query)
     
     return {"query": query, "answer": answer}
+
 # API to upload files and continue chat on an existing thread
 @app.post("/upload_and_continue_chat/")
 async def upload_and_continue_chat(
@@ -266,7 +274,7 @@ async def upload_and_continue_chat(
     if not combined_text:
         return JSONResponse(content={"error": "None of the provided files contain extractable text."}, status_code=400)
 
-    # Fetch the thread and append the new message
+    # Fetch the thread and append the new message and uploaded files
     if user_id in user_threads:
         for thread in user_threads[user_id]:
             if thread['id'] == thread_id:
@@ -275,6 +283,7 @@ async def upload_and_continue_chat(
                     "user_id": user_id,
                     "content": f"Query: {query}\nFiles: {uploaded_file_paths}"
                 })
+                thread['uploaded_files'].extend(uploaded_file_paths)  # Append the file paths
                 break
         else:
             raise HTTPException(status_code=404, detail="Thread not found.")

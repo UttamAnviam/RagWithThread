@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 # Set your OpenAI API key
-openai.api_key = "APi Key"  # Replace with your actual OpenAI API key
+openai.api_key = "sk-Ep2P720bD2GzRkah7NAiVFOU_aHoUcQxTCwS9yPuMcT3BlbkFJN0Kgi1CGy-dW6Ndf_sb6wy4eO7dn6mEcHhEgSgjL4A"  # Replace with your actual OpenAI API key
 
 # Data structure to hold threads
 threads: List["Thread"] = []
@@ -54,7 +54,7 @@ def split_text_into_chunks(text, chunk_size=1500):
 def query_pdf_content(chunk_text, query):
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
